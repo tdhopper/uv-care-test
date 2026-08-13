@@ -1,0 +1,72 @@
+name: win-verify
+run-name: "win-verify (${{ inputs.shell }}): ${{ inputs.label }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      script:
+        description: Script to run on the Windows runner
+        required: true
+        type: string
+      shell:
+        description: Shell to run the script under
+        type: choice
+        options:
+          - powershell # Windows PowerShell 5.1 — what most readers have
+          - pwsh       # PowerShell 7
+          - cmd
+        default: powershell
+      label:
+        description: Short label for this run
+        type: string
+        default: adhoc
+
+jobs:
+  run:
+    runs-on: windows-latest
+    steps:
+      - name: Environment report
+        shell: pwsh
+        run: |
+          Write-Host "== OS =="
+          (Get-CimInstance Win32_OperatingSystem).Caption
+          Write-Host "== PowerShell versions =="
+          $PSVersionTable.PSVersion.ToString()
+          powershell -c '$PSVersionTable.PSVersion.ToString()'
+          Write-Host "== Execution policy =="
+          Get-ExecutionPolicy -List | Out-String
+          Write-Host "== Preinstalled tools (pollution check) =="
+          foreach ($t in 'uv','ruff','python','py','pip') {
+            $c = Get-Command $t -ErrorAction SilentlyContinue
+            if ($c) { Write-Host "$t : $($c.Source)" } else { Write-Host "$t : NOT FOUND" }
+          }
+
+      - name: Run script (powershell 5.1)
+        if: inputs.shell == 'powershell'
+        shell: powershell
+        env:
+          SCRIPT: ${{ inputs.script }}
+        run: |
+          Set-Content -Path $env:RUNNER_TEMP\script.ps1 -Value $env:SCRIPT
+          & powershell -ExecutionPolicy Bypass -File $env:RUNNER_TEMP\script.ps1
+          exit $LASTEXITCODE
+
+      - name: Run script (pwsh)
+        if: inputs.shell == 'pwsh'
+        shell: pwsh
+        env:
+          SCRIPT: ${{ inputs.script }}
+        run: |
+          Set-Content -Path $env:RUNNER_TEMP\script.ps1 -Value $env:SCRIPT
+          & pwsh -File $env:RUNNER_TEMP\script.ps1
+          exit $LASTEXITCODE
+
+      - name: Run script (cmd)
+        if: inputs.shell == 'cmd'
+        shell: pwsh
+        env:
+          SCRIPT: ${{ inputs.script }}
+        run: |
+          Set-Content -Path $env:RUNNER_TEMP\script.cmd -Value $env:SCRIPT
+          & cmd /c "$env:RUNNER_TEMP\script.cmd"
+          exit $LASTEXITCODE
